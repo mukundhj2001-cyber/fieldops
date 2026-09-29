@@ -38,19 +38,13 @@ export default function Home() {
             microphone when available.
           </p>
 
-          <div className="mb-12 flex flex-wrap gap-3">
+          <div className="mb-12">
             <Link
               href="/demo/voice"
-              className="rounded-full bg-amber-500 px-7 py-3 text-sm font-semibold text-black shadow-lg shadow-amber-500/20 transition hover:bg-amber-400"
+              className="inline-block rounded-full bg-amber-500 px-7 py-3 text-sm font-semibold text-black shadow-lg shadow-amber-500/20 transition hover:bg-amber-400"
             >
               Start conversation
             </Link>
-            <a
-              href="#hours"
-              className="rounded-full px-6 py-3 text-sm font-medium text-zinc-300 ring-1 ring-zinc-700 transition hover:bg-zinc-900 hover:text-zinc-100"
-            >
-              Support hours
-            </a>
           </div>
         </div>
 
