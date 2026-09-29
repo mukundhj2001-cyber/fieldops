@@ -19,19 +19,9 @@ type TurnDecision = {
   raw: unknown;
 };
 
-type DecisionLogEntry = {
+type Notice = {
   id: string;
-  at: string;
-  userText: string;
-  decision: TurnDecision;
-};
-
-type ActionLogEntry = {
-  id: string;
-  at: string;
-  type: string;
-  label: string;
-  payload?: Record<string, unknown>;
+  text: string;
 };
 
 type SpeechRecognitionLike = {
@@ -50,29 +40,27 @@ type SpeechRecognitionEventLike = {
   results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
 };
 
-function nowLabel() {
-  return new Date().toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-}
-
 function uid() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+const SHOW_DEBUG =
+  typeof process !== "undefined" &&
+  process.env.NEXT_PUBLIC_SHOW_DEBUG === "1";
 
 export default function VoiceDemo() {
   const [inCall, setInCall] = useState(false);
   const [busy, setBusy] = useState(false);
   const [transcript, setTranscript] = useState<HistoryItem[]>([]);
   const [input, setInput] = useState("");
-  const [decisions, setDecisions] = useState<DecisionLogEntry[]>([]);
-  const [actions, setActions] = useState<ActionLogEntry[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [listening, setListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugTurns, setDebugTurns] = useState<
+    Array<{ id: string; userText: string; decision: TurnDecision }>
+  >([]);
+  const [debugOpen, setDebugOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const transcriptRef = useRef<HistoryItem[]>([]);
@@ -92,20 +80,24 @@ export default function VoiceDemo() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [transcript, decisions, actions]);
+  }, [transcript, notices]);
 
-  const appendActions = useCallback((decision: TurnDecision) => {
-    if (!decision.actions?.length) return;
-    setActions((prev) => [
-      ...decision.actions!.map((a) => ({
+  const pushCustomerNotices = useCallback((decision: TurnDecision) => {
+    const next: Notice[] = [];
+    if (decision.escalate) {
+      next.push({
         id: uid(),
-        at: nowLabel(),
-        type: a.type,
-        label: a.label,
-        payload: a.payload,
-      })),
-      ...prev,
-    ]);
+        text: "A specialist has been notified. Someone from our team will follow up with you shortly.",
+      });
+    } else if (decision.actions?.some((a) => a.type === "booking")) {
+      next.push({
+        id: uid(),
+        text: "We've noted your booking request. You'll get a confirmation shortly.",
+      });
+    }
+    if (next.length) {
+      setNotices((prev) => [...next, ...prev].slice(0, 4));
+    }
   }, []);
 
   const runTurn = useCallback(
@@ -138,16 +130,14 @@ export default function VoiceDemo() {
         ];
         transcriptRef.current = withAgent;
         setTranscript(withAgent);
-        setDecisions((prev) => [
-          {
-            id: uid(),
-            at: nowLabel(),
-            userText: text,
-            decision: data,
-          },
-          ...prev,
-        ]);
-        appendActions(data);
+        pushCustomerNotices(data);
+
+        if (SHOW_DEBUG) {
+          setDebugTurns((prev) => [
+            { id: uid(), userText: text, decision: data },
+            ...prev,
+          ]);
+        }
 
         if (typeof window !== "undefined" && window.speechSynthesis && data.reply) {
           try {
@@ -160,13 +150,13 @@ export default function VoiceDemo() {
           }
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Turn failed";
+        const msg = e instanceof Error ? e.message : "Something went wrong";
         setError(msg);
         const withErr: HistoryItem[] = [
           ...transcriptRef.current,
           {
             role: "agent",
-            text: "Sorry — I hit a temporary error processing that turn.",
+            text: "Sorry — I'm having trouble right now. Please try again in a moment.",
           },
         ];
         transcriptRef.current = withErr;
@@ -176,15 +166,15 @@ export default function VoiceDemo() {
         setBusy(false);
       }
     },
-    [appendActions],
+    [pushCustomerNotices],
   );
 
   const startCall = async () => {
     setInCall(true);
     transcriptRef.current = [];
     setTranscript([]);
-    setDecisions([]);
-    setActions([]);
+    setNotices([]);
+    setDebugTurns([]);
     setError(null);
     setInput("");
     await runTurn("Hello", []);
@@ -251,15 +241,15 @@ export default function VoiceDemo() {
   };
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[1.4fr_1fr]">
-      <section className="flex min-h-[70vh] flex-col rounded-2xl border border-zinc-800 bg-zinc-950/80 shadow-xl shadow-black/40">
+    <div className="mx-auto flex max-w-2xl flex-col gap-4">
+      <section className="flex min-h-[72vh] flex-col rounded-2xl border border-zinc-800 bg-zinc-950/90 shadow-xl shadow-black/40">
         <header className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-amber-500/90">
-              Live call
+              Cyberfield Support
             </p>
             <h2 className="text-lg font-semibold text-zinc-100">
-              Cyberfield Support · Voice Agent
+              {inCall ? "You're connected" : "Ready when you are"}
             </h2>
           </div>
           <div className="flex items-center gap-2">
@@ -269,47 +259,64 @@ export default function VoiceDemo() {
                   ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
                   : "bg-zinc-600"
               }`}
+              aria-hidden
             />
-            <span className="text-sm text-zinc-400">{inCall ? "In call" : "Idle"}</span>
+            <span className="text-sm text-zinc-400">
+              {inCall ? "In conversation" : "Offline"}
+            </span>
           </div>
         </header>
 
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
           {!inCall && (
-            <div className="m-auto max-w-md text-center text-zinc-400">
-              <p className="mb-2 text-zinc-200">
-                Start a demo call to exercise the hybrid agent.
+            <div className="m-auto max-w-sm text-center text-zinc-400">
+              <p className="mb-3 text-base text-zinc-200">
+                How can we help today?
               </p>
-              <p className="text-sm">
-                Try: &ldquo;What are your hours?&rdquo; or &ldquo;I want a refund for order
-                123&rdquo;
+              <p className="text-sm leading-relaxed">
+                Start a conversation, then ask about hours, shipping, refunds,
+                or request a specialist. You can type or use the microphone.
               </p>
             </div>
           )}
+
           {transcript.map((m, i) => (
             <div
               key={`${i}-${m.role}`}
-              className={`max-w-[90%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+              className={`max-w-[88%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                 m.role === "user"
                   ? "ml-auto bg-amber-500/15 text-amber-50 ring-1 ring-amber-500/30"
                   : "mr-auto bg-zinc-900 text-zinc-200 ring-1 ring-zinc-800"
               }`}
             >
               <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">
-                {m.role === "user" ? "Caller" : "Agent"}
+                {m.role === "user" ? "You" : "Support"}
               </p>
               {m.text}
             </div>
           ))}
+
+          {notices.map((n) => (
+            <div
+              key={n.id}
+              className="mr-auto max-w-[92%] rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-2.5 text-sm leading-relaxed text-sky-100"
+              role="status"
+            >
+              {n.text}
+            </div>
+          ))}
+
           {busy && (
-            <p className="animate-pulse text-xs text-zinc-500">Jev deciding turn…</p>
+            <p className="animate-pulse text-xs text-zinc-500">
+              Connecting you…
+            </p>
           )}
           <div ref={bottomRef} />
         </div>
 
         {error && (
           <p className="border-t border-red-900/50 bg-red-950/40 px-5 py-2 text-sm text-red-300">
-            {error}
+            We couldn&apos;t send that just now. Please try again.
           </p>
         )}
 
@@ -319,17 +326,17 @@ export default function VoiceDemo() {
               <button
                 type="button"
                 onClick={() => void startCall()}
-                className="rounded-full bg-amber-500 px-5 py-2 text-sm font-semibold text-black hover:bg-amber-400"
+                className="rounded-full bg-amber-500 px-5 py-2.5 text-sm font-semibold text-black shadow-md shadow-amber-500/15 transition hover:bg-amber-400"
               >
-                Start call
+                Start conversation
               </button>
             ) : (
               <button
                 type="button"
                 onClick={endCall}
-                className="rounded-full bg-zinc-800 px-5 py-2 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-700 hover:bg-zinc-700"
+                className="rounded-full bg-zinc-800 px-5 py-2.5 text-sm font-semibold text-zinc-100 ring-1 ring-zinc-700 transition hover:bg-zinc-700"
               >
-                End call
+                End conversation
               </button>
             )}
             <button
@@ -338,16 +345,16 @@ export default function VoiceDemo() {
               onClick={toggleListen}
               title={
                 speechSupported
-                  ? "Toggle Web Speech recognition"
-                  : "Web Speech API not available in this browser"
+                  ? "Speak your message"
+                  : "Microphone not available in this browser"
               }
-              className={`rounded-full px-4 py-2 text-sm font-medium ring-1 disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`rounded-full px-4 py-2.5 text-sm font-medium ring-1 transition disabled:cursor-not-allowed disabled:opacity-40 ${
                 listening
                   ? "bg-red-500/20 text-red-200 ring-red-500/40"
                   : "bg-zinc-900 text-zinc-300 ring-zinc-700 hover:bg-zinc-800"
               }`}
             >
-              {listening ? "Stop mic" : "Mic (Web Speech)"}
+              {listening ? "Listening…" : "Microphone"}
             </button>
           </div>
 
@@ -356,117 +363,63 @@ export default function VoiceDemo() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={!inCall || busy}
-              placeholder={inCall ? "Type a caller turn…" : "Start a call to type"}
+              placeholder={
+                inCall ? "Type your message…" : "Start a conversation to chat"
+              }
               className="flex-1 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-amber-500/50 disabled:opacity-50"
+              aria-label="Message"
             />
             <button
               type="submit"
               disabled={!inCall || busy || !input.trim()}
-              className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black hover:bg-amber-400 disabled:opacity-40"
+              className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-amber-400 disabled:opacity-40"
             >
               Send
             </button>
           </form>
+
+          <p className="mt-3 text-center text-[11px] text-zinc-600">
+            Mon–Fri · 9am–6pm IST · Outside hours, leave a message and we&apos;ll
+            follow up
+          </p>
         </div>
       </section>
 
-      <div className="flex flex-col gap-4">
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-950/80">
-          <header className="border-b border-zinc-800 px-4 py-3">
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-amber-500/90">
-              Decision log
-            </p>
-            <h3 className="text-sm font-semibold text-zinc-100">Jev mock outputs</h3>
-          </header>
-          <ul className="max-h-[42vh] space-y-3 overflow-y-auto p-4">
-            {decisions.length === 0 && (
-              <li className="text-sm text-zinc-500">
-                Decisions appear here after each turn.
-              </li>
+      {SHOW_DEBUG && (
+        <details
+          className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-4 py-3 text-xs text-zinc-500"
+          open={debugOpen}
+          onToggle={(e) => setDebugOpen((e.target as HTMLDetailsElement).open)}
+        >
+          <summary className="cursor-pointer select-none font-medium text-zinc-400">
+            Dev details
+          </summary>
+          <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto">
+            {debugTurns.length === 0 && (
+              <li>No turns yet.</li>
             )}
-            {decisions.map((d) => (
+            {debugTurns.map((d) => (
               <li
                 key={d.id}
-                className="rounded-xl bg-zinc-900/80 p-3 ring-1 ring-zinc-800"
+                className="rounded-lg bg-zinc-900/80 p-2 font-mono text-[11px] text-zinc-400 ring-1 ring-zinc-800"
               >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="font-mono text-[11px] text-zinc-500">{d.at}</span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                      d.decision.path === "script"
-                        ? "bg-amber-500/15 text-amber-300"
-                        : "bg-sky-500/15 text-sky-300"
-                    }`}
-                  >
-                    {d.decision.path}
-                  </span>
+                <div>
+                  intent={d.decision.intent} path={d.decision.path} conf=
+                  {(d.decision.confidence * 100).toFixed(0)}% escalate=
+                  {String(d.decision.escalate)}
+                  {d.decision.scriptId ? ` script=${d.decision.scriptId}` : ""}
                 </div>
-                <p className="mb-2 truncate text-xs text-zinc-400">
-                  &ldquo;{d.userText}&rdquo;
-                </p>
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                  <div>
-                    <dt className="text-zinc-500">intent</dt>
-                    <dd className="font-mono text-zinc-200">{d.decision.intent}</dd>
+                {d.decision.actions?.length ? (
+                  <div className="mt-1 text-zinc-500">
+                    actions:{" "}
+                    {d.decision.actions.map((a) => a.type).join(", ")}
                   </div>
-                  <div>
-                    <dt className="text-zinc-500">confidence</dt>
-                    <dd className="font-mono text-zinc-200">
-                      {(d.decision.confidence * 100).toFixed(0)}%
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-zinc-500">escalate</dt>
-                    <dd
-                      className={`font-mono ${
-                        d.decision.escalate ? "text-red-300" : "text-emerald-300"
-                      }`}
-                    >
-                      {String(d.decision.escalate)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-zinc-500">script_id</dt>
-                    <dd className="font-mono text-zinc-200">
-                      {d.decision.scriptId ?? "—"}
-                    </dd>
-                  </div>
-                </dl>
+                ) : null}
               </li>
             ))}
           </ul>
-        </section>
-
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-950/80">
-          <header className="border-b border-zinc-800 px-4 py-3">
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-amber-500/90">
-              Action log
-            </p>
-            <h3 className="text-sm font-semibold text-zinc-100">Ticket / CRM stubs</h3>
-          </header>
-          <ul className="max-h-[28vh] space-y-2 overflow-y-auto p-4">
-            {actions.length === 0 && (
-              <li className="text-sm text-zinc-500">
-                Escalate or booking confirms emit stub actions here.
-              </li>
-            )}
-            {actions.map((a) => (
-              <li
-                key={a.id}
-                className="rounded-lg bg-zinc-900/80 px-3 py-2 text-xs ring-1 ring-zinc-800"
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono uppercase text-amber-400">
-                    {a.type}
-                  </span>
-                  <span className="font-mono text-[10px] text-zinc-500">{a.at}</span>
-                </div>
-                <p className="text-zinc-200">{a.label}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
+        </details>
+      )}
     </div>
   );
 }

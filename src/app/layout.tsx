@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FieldOps · Cyberfield Support",
+  title: "Cyberfield Support",
   description:
-    "Hybrid Jev + scripted FAQ + RAG voice agent demo for Cyberfield Support",
+    "Talk to Cyberfield Support — voice and chat help for hours, orders, refunds, and more.",
 };
 
 export default function RootLayout({
@@ -26,7 +26,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-black antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-zinc-950 antialiased`}
       >
         {children}
       </body>

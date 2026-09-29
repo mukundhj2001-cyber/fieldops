@@ -1,11 +1,15 @@
-# FieldOps Voice Agent
+# FieldOps · Cyberfield Support
 
-Portfolio prep demo for **Cyberfield AI**: a hybrid phone/voice support agent for sample client **Cyberfield Support**.
+Public-facing voice/chat support UI for sample client **Cyberfield Support**, backed by a hybrid agent (Jev decisions + scripted FAQs + keyword RAG).
 
-Stack: **Next.js (App Router) · TypeScript · Tailwind**  
+The **site UI** is written for a support caller. Decision/debug panels are off by default; the API still returns full turn metadata for builders.
+
+## Stack
+
+Next.js (App Router) · TypeScript · Tailwind  
 Decisioning: **Jev** via TypeSafe `/v1/systemone` when configured (otherwise `mockJev`) + **scripted FAQs** + **naive keyword RAG**.
 
-## Hybrid architecture
+## Architecture (builders)
 
 ```
 Caller turn (text or Web Speech)
@@ -14,25 +18,22 @@ Caller turn (text or Web Speech)
  POST /api/turn  { transcript, history? }
         │
         ▼
- decideTurn()  ──►  callTypeSafe → POST /v1/systemone   [or mockJev when JEV_PROVIDER!=typesafe]
-        │                 │
-        │                 ├─ intent, escalate, path (script|rag), script_id, confidence
-        │                 └─ choice / score / noul answers
-        ▼
- path === "script"  →  reply from src/lib/scripts.ts by script_id
- path === "rag"     →  groundedReply() over src/lib/kb.ts (keyword overlap)
+ decideTurn()  ──►  callTypeSafe → POST /v1/systemone   [or mockJev]
         │
         ▼
- UI: transcript + Decision log + Action log (ticket/CRM stubs)
+ path === "script"  →  reply from src/lib/scripts.ts
+ path === "rag"     →  groundedReply() over src/lib/kb.ts
+        │
+        ▼
+ UI: transcript + friendly escalate notices
+ (API still returns intent / path / confidence / actions / raw)
 ```
 
 | Layer | Role |
 |--------|------|
-| **Jev** | Structured decisions (intent, escalate, route, script_id) — not free-form chat |
-| **Scripts** | Stable, human-approved lines for greetings, hours, booking, escalate, goodbye |
-| **RAG** | Tiny local KB for refund / shipping / warranty / hours policy prose |
-
-`decideTurn` normalizes both mock and TypeSafe responses into `JevAnswer[]` (`choice` / `score` / `confidence`). Real transport lives in `callTypeSafe` (`src/lib/jev/client.ts`).
+| **Jev** | Structured decisions (intent, escalate, route, script_id) |
+| **Scripts** | Stable lines for greetings, hours, booking, escalate, goodbye |
+| **RAG** | Tiny local KB for refund / shipping / warranty / hours prose |
 
 ## Quick start
 
@@ -42,55 +43,62 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) → **Open voice demo** → `/demo/voice`.
+Open [http://localhost:3000](http://localhost:3000) → **Start conversation** → `/demo/voice`.
 
 ```bash
-npm run build   # production build check
-npm start       # serve production build
+npm run build
+npm start
 ```
 
 ## Try these turns
 
-1. **Start call** → greeting script  
-2. Type `What are your hours?` → `path: script`, `script_id: hours`  
-3. Type `I want a refund for order 123` → escalate + RAG policy + Action log ticket/CRM stubs  
+1. **Start conversation** → greeting  
+2. Type `What are your hours?`  
+3. Type `I want a refund for order 123` → escalate notice + policy reply  
 
-Optional: **Mic (Web Speech)** in Chromium-based browsers (no server STT).
+Optional: **Microphone** in Chromium-based browsers (Web Speech; no server STT).
 
 ## Env — TypeSafe / Jev
 
-Copy `.env.example` → `.env.local` and uncomment / fill in:
+Copy `.env.example` → `.env.local`:
 
 ```bash
-TYPESAFE_API_KEY=          # your TypeSafe key (never commit)
+TYPESAFE_API_KEY=          # never commit
 TYPESAFE_API_URL=https://api.typesafe.ai
 TYPESAFE_MODEL=jev-latest
 JEV_PROVIDER=typesafe
+# NEXT_PUBLIC_SHOW_DEBUG=1   # optional collapsed Dev details on voice page
 ```
 
-- **Default (`JEV_PROVIDER` unset/mock, or no key):** `mockJev` — no network, no paid APIs
-- **`JEV_PROVIDER=typesafe` + `TYPESAFE_API_KEY`:** `decideTurn` → `callTypeSafe()` which POSTs to `{TYPESAFE_API_URL}/v1/systemone` (Bearer auth, model `jev-latest` by default). Same `TurnDecision` return shape; escalate uses TypeSafe `noul` (≥0.5 → yes).
+- **Default (`JEV_PROVIDER` unset/mock, or no key):** `mockJev`  
+- **`JEV_PROVIDER=typesafe` + key:** real TypeSafe `/v1/systemone`
 
-Do **not** commit real keys. `.env*` is gitignored by the Next.js template.
+`.env*` is gitignored.
 
 ## Project map
 
 ```
 src/
   app/
-    page.tsx              Landing
-    demo/voice/page.tsx   Dark voice UI
+    page.tsx              Public landing (Cyberfield Support)
+    demo/voice/page.tsx   Voice/chat conversation UI
     api/turn/route.ts     POST → decideTurn (+ RAG if needed)
   components/
-    VoiceDemo.tsx         Call panel, decision log, action log
+    VoiceDemo.tsx         Customer call panel (debug UI behind env flag)
   lib/
-    scripts.ts            20+ script lines with stable ids
-    kb.ts                 Fake KB + keyword search + groundedReply
+    scripts.ts            Script lines
+    kb.ts                 Local KB + keyword search
     jev/
-      types.ts            TypeSafe-style types + TURN_QUESTIONS
-      mock.ts             mockJev(state, questions)
-      client.ts           decideTurn — mock ↔ real swap point
+      types.ts            Types + TURN_QUESTIONS
+      mock.ts             mockJev
+      client.ts           decideTurn — mock ↔ TypeSafe
 ```
+
+## Public UI vs API
+
+- **Default UI:** clean Cyberfield Support product — no decision log, provider labels, or stub JSON.  
+- **API:** `/api/turn` still returns full `TurnDecision` (intent, path, confidence, actions, raw).  
+- **Optional:** set `NEXT_PUBLIC_SHOW_DEBUG=1` for a collapsed “Dev details” panel on the voice page.
 
 ## Git
 
@@ -98,4 +106,4 @@ Remote: `https://github.com/mukundhj2001-cyber/fieldops`.
 
 ## License
 
-Private portfolio prep — Cyberfield AI internal sample.
+Private sample for Cyberfield AI agency portfolio demos.
