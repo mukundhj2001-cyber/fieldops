@@ -16,7 +16,7 @@ const TTS_MAX_CHARS = 420;
 
 /** Strip markdown / markdown-ish markup for Twilio <Say>. */
 export function stripForTts(text: string): string {
-  let out = text
+  const out = text
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
