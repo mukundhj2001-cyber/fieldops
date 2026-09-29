@@ -3,7 +3,7 @@
 Portfolio prep demo for **Cyberfield AI**: a hybrid phone/voice support agent for sample client **Cyberfield Support**.
 
 Stack: **Next.js (App Router) · TypeScript · Tailwind**  
-Decisioning: **Jev** (mock TypeSafe-style client today; swappable for real API) + **scripted FAQs** + **naive keyword RAG** (no vector DB / paid LLM required).
+Decisioning: **Jev** via TypeSafe `/v1/systemone` when configured (otherwise `mockJev`) + **scripted FAQs** + **naive keyword RAG**.
 
 ## Hybrid architecture
 
@@ -14,7 +14,7 @@ Caller turn (text or Web Speech)
  POST /api/turn  { transcript, history? }
         │
         ▼
- decideTurn()  ──►  mockJev(state, questions)   [or real TypeSafe when configured]
+ decideTurn()  ──►  callTypeSafe → POST /v1/systemone   [or mockJev when JEV_PROVIDER!=typesafe]
         │                 │
         │                 ├─ intent, escalate, path (script|rag), script_id, confidence
         │                 └─ choice / score / noul answers
@@ -32,7 +32,7 @@ Caller turn (text or Web Speech)
 | **Scripts** | Stable, human-approved lines for greetings, hours, booking, escalate, goodbye |
 | **RAG** | Tiny local KB for refund / shipping / warranty / hours policy prose |
 
-The mock client implements the **same request/response shape** as a future TypeSafe client (`JevState` + `JevQuestion[]` → `JevAnswer[]` with `choice` / `score` / `noul` + `confidence`). Swap only the transport in `src/lib/jev/client.ts`.
+`decideTurn` normalizes both mock and TypeSafe responses into `JevAnswer[]` (`choice` / `score` / `confidence`). Real transport lives in `callTypeSafe` (`src/lib/jev/client.ts`).
 
 ## Quick start
 
@@ -57,18 +57,19 @@ npm start       # serve production build
 
 Optional: **Mic (Web Speech)** in Chromium-based browsers (no server STT).
 
-## Env — real TypeSafe / Jev later
+## Env — TypeSafe / Jev
 
-Copy `.env.example` → `.env.local`:
+Copy `.env.example` → `.env.local` and uncomment / fill in:
 
 ```bash
-TYPESAFE_API_KEY=sk_live_xxx
-TYPESAFE_API_URL=https://api.typesafe.example/v1
+TYPESAFE_API_KEY=          # your TypeSafe key (never commit)
+TYPESAFE_API_URL=https://api.typesafe.ai
+TYPESAFE_MODEL=jev-latest
 JEV_PROVIDER=typesafe
 ```
 
-- **Default (no key):** `mockJev` — no network, no paid APIs  
-- **`JEV_PROVIDER=typesafe` + `TYPESAFE_API_KEY`:** `decideTurn` calls `callTypeSafe()` (same `TurnDecision` return shape)
+- **Default (`JEV_PROVIDER` unset/mock, or no key):** `mockJev` — no network, no paid APIs
+- **`JEV_PROVIDER=typesafe` + `TYPESAFE_API_KEY`:** `decideTurn` → `callTypeSafe()` which POSTs to `{TYPESAFE_API_URL}/v1/systemone` (Bearer auth, model `jev-latest` by default). Same `TurnDecision` return shape; escalate uses TypeSafe `noul` (≥0.5 → yes).
 
 Do **not** commit real keys. `.env*` is gitignored by the Next.js template.
 
@@ -93,7 +94,7 @@ src/
 
 ## Git
 
-Repo is initialized locally under `/workspace/fieldops`. Do not push unless explicitly asked.
+Remote: `https://github.com/mukundhj2001-cyber/fieldops`.
 
 ## License
 
